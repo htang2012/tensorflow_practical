@@ -28,42 +28,72 @@ parser.add_argument('--train_steps', default=200, type=int,
 TRAIN_URL = "http://download.tensorflow.org/data/iris_training.csv"
 TEST_URL = "http://download.tensorflow.org/data/iris_test.csv"
 
-COLUMNS = ['SepalLength', 'SepalWidth', 'PetalLength', 'PetalWidth', 'Species']
+CSV_COLUMN_NAMES = ['SepalLength', 'SepalWidth', 'PetalLength', 'PetalWidth', 'Species']
 SPECIES = ['Sentosa', 'Versicolor', 'Virginica']
 
+def load_data(label_name='Species'):
+    """Parses the csv file in TRAIN_URL and TEST_URL."""
 
-def load_data(train_fraction=0.8, seed=0, y_name='Species'):
-    """Returns the iris dataset as (train_x, train_y), (test_x, test_y)."""
-    train_path = tf.keras.utils.get_file(TRAIN_URL.split('/')[-1], TRAIN_URL)
-    train = pd.read_csv(train_path, names=COLUMNS, header=0)
-    train_x, train_y = train, train.pop(y_name)
+    # Create a local copy of the training set.
+    train_path = tf.keras.utils.get_file(fname=TRAIN_URL.split('/')[-1],
+                                         origin=TRAIN_URL)
+    # train_path now holds the pathname: ~/.keras/datasets/iris_training.csv
 
+    # Parse the local CSV file.
+    train = pd.read_csv(filepath_or_buffer=train_path,
+                        names=CSV_COLUMN_NAMES,  # list of column names
+                        header=0  # ignore the first row of the CSV file.
+                       )
+    # train now holds a pandas DataFrame, which is data structure
+    # analogous to a table.
+
+    # 1. Assign the DataFrame's labels (the right-most column) to train_label.
+    # 2. Delete (pop) the labels from the DataFrame.
+    # 3. Assign the remainder of the DataFrame to train_features
+    train_features, train_label = train, train.pop(label_name)
+
+    # Apply the preceding logic to the test set.
     test_path = tf.keras.utils.get_file(TEST_URL.split('/')[-1], TEST_URL)
-    test = pd.read_csv(test_path, names=COLUMNS, header=0)
-    test_x, test_y = test, test.pop(y_name)
+    test = pd.read_csv(test_path, names=CSV_COLUMN_NAMES, header=0)
+    test_features, test_label = test, test.pop(label_name)
 
-    return (train_x, train_y), (test_x, test_y)
+    # Return four DataFrames.
+    return (train_features, train_label), (test_features, test_label)
 
 
-def make_dataset(*inputs):
-    return tf.data.Dataset.from_tensor_slices(inputs)
 
-def from_dataset(ds):
-     return lambda: next(iter(ds))
+# Call load_data() to parse the CSV file.
+(train_feature, train_label), (test_feature, test_label) = load_data()
+print(train_feature, train_label)
+print(test_feature, test_label)
+
+feature_columns = [ ]
+for key in train_feature.keys():
+    feature_columns.append(tf.feature_column.numeric_column(key=key))
+
+
+def train_input_fn(features, labels=None, training = True, batch_size=32):
+    """An input function for evaluation or prediction"""
+    # Convert inputs to a tf.dataset object.
+    dataset = tf.data.Dataset.from_tensor_slices((dict(features), labels))
+    if training:
+        dataset = dataset.shuffle(1000).repeat()
+    return dataset.batch(batch_size)
+
 
 
 def my_model(features, labels, mode, params):
     """DNN with three hidden layers, and dropout of 0.1 probability."""
     # Create three fully connected layers each layer having a dropout
     # probability of 0.1.
-    net = tf.feature_column.input_layer(features, params['feature_columns'])
+    net = tf.compat.v1.feature_column.input_layer(features, params['feature_columns'])
     for units in params.get('hidden_units', [10, 20, 10]):
-        net = tf.layers.dense(net, units=units, activation=tf.nn.relu)
-        net = tf.layers.dropout(net, rate=0.1,
+        net = tf.compat.v1.layers.dense(net, units=units, activation=tf.nn.relu)
+        net = tf.compat.v1.layers.dropout(net, rate=0.1,
                                 training=mode == tf.estimator.ModeKeys.TRAIN)
 
     # Compute logits (1 per class).
-    logits = tf.layers.dense(net, params['n_classes'], activation=None)
+    logits = tf.compat.v1.layers.dense(net, params['n_classes'], activation=None)
 
     # Compute predictions.
     predicted_classes = tf.argmax(logits, 1)
@@ -79,11 +109,11 @@ def my_model(features, labels, mode, params):
     # and with a on-value of 1 for each one-hot vector of length 3.
     onehot_labels = tf.one_hot(labels, 3, 1, 0)
     # Compute loss.
-    loss = tf.losses.softmax_cross_entropy(
+    loss = tf.compat.v1.losses.softmax_cross_entropy(
         onehot_labels=onehot_labels, logits=logits)
 
     # Compute evaluation metrics.
-    accuracy = tf.metrics.accuracy(labels=labels,
+    accuracy = tf.compat.v1.metrics.accuracy(labels=labels,
                                    predictions=predicted_classes,
                                    name='acc_op')
     metrics = {'accuracy': accuracy}
@@ -96,8 +126,9 @@ def my_model(features, labels, mode, params):
     # Create training op.
     assert mode == tf.estimator.ModeKeys.TRAIN
 
-    optimizer = tf.train.AdagradOptimizer(learning_rate=0.1)
-    train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+    optimizer = tf.compat.v1.train.AdagradOptimizer(learning_rate=0.1)
+
+    train_op = optimizer.minimize(loss, global_step=tf.compat.v1.train.get_global_step())
     return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 
@@ -111,7 +142,7 @@ def main(argv):
 
     # Feature columns describe the input: all columns are numeric.
     feature_columns = [tf.feature_column.numeric_column(col_name)
-                       for col_name in COLUMNS[:-1]]
+                       for col_name in CSV_COLUMN_NAMES[:-1]]
 
     # Build 3 layer DNN with 10, 20, 10 units respectively.
     classifier = tf.estimator.Estimator(
@@ -122,14 +153,8 @@ def main(argv):
             'n_classes': 3,
         })
 
-    # Train the Model.
-    train = (
-        make_dataset(train_x, train_y)
-        .repeat()
-        .shuffle(1000)
-        .batch(args.batch_size))
-
-    classifier.train(input_fn=from_dataset(train), steps=args.train_steps)
+    
+    classifier.train(input_fn=lambda:train_input_fn(train_feature, train_label, training=True), steps=args.train_steps)
 
     # Evaluate the model.
     test = make_dataset(test_x, test_y).batch(args.batch_size)
@@ -145,11 +170,11 @@ def main(argv):
     }).batch(args.batch_size)
 
     for p in classifier.predict(input_fn=from_dataset(predict_input)):
-        template = ('Prediction is "{}" ({:.1f}%)')
+         template = ('Prediction is "{}" ({:.1f}%)')
 
-        class_id = p['class_ids'][0]
-        probability = p['probabilities'][class_id]
-        print(template.format(SPECIES[class_id], 100 * probability))
+         class_id = p['class_ids'][0]
+         probability = p['probabilities'][class_id]
+         print(template.format(SPECIES[class_id], 100 * probability))
 
 
 if __name__ == '__main__':
