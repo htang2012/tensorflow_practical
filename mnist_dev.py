@@ -110,7 +110,7 @@ for pred_dict, expec in zip(predictions, expected):
 
 print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
 
-sys.exit("done")
+
 
 
 
