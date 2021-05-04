@@ -22,7 +22,7 @@ import tensorflow as tf
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
-parser.add_argument('--train_steps', default=2000, type=int,
+parser.add_argument('--train_steps', default=5000, type=int,
                     help='number of training steps')
 
 TRAIN_URL = "http://download.tensorflow.org/data/iris_training.csv"
