@@ -1,7 +1,5 @@
-
 #https://github.com/htang2012/eat_tensorflow2_in_30_days/blob/master/6-4%2C%E4%BD%BF%E7%94%A8%E5%A4%9AGPU%E8%AE%AD%E7%BB%83%E6%A8%A1%E5%9E%8B.md
 import tensorflow as tf
-
 print(tf.__version__)
 from tensorflow.keras import * 
 
